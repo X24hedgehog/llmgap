@@ -1,0 +1,1 @@
+srun -n 1 --cpus-per-task=1 --gpus=1 --gres=gpumem:20000m --time=5:00:00 --mem-per-cpu=8192 --pty bash -i

@@ -1,0 +1,29 @@
+# Generated files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+
+# Output and result files
+out/
+outputs/
+*.csv
+slurm-*.out
+slurm-*.err
+
+# Large external repos (use git submodules instead)
+colm-paper-code-cleaned/
+reasoning-efficiency/
+reasoning-efficiency-v1/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+.env
