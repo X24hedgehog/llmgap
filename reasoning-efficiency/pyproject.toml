@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reasoning-efficiency"
+version = "1.0"
+description = "Code for NeurIPS paper"
+readme = "Readme.md"
+requires-python = ">=3.7"
+dependencies = [
+    "click==8.1.7",
+    "pandas==2.2.2",
+    "pydantic==2.9.2",
+    "matplotlib==3.9.2",
+    "networkx==3.3",
+    "pyvis==0.3.2",
+    "tqdm==4.67.1",
+    "torch==2.6.0",
+    "transformers==4.51.3",
+    "accelerate==1.6.0",
+    "vllm==0.8.3",
+    "wandb==0.19.9",
+]
+
+[tool.setuptools]
+packages = ["mathgap"]
+
+[project.urls]
+homepage = "https://github.com/rycolab/reasoning-efficiency"

@@ -1,0 +1,180 @@
+[
+{
+    "topic": ["toy", "toys"],
+    "super": ["package", "packages"],
+    "sub": [
+        ["doll", "dolls"],
+        ["teddy bear", "teddy bears"],
+        ["kite", "kites"],
+        ["yo-yo", "yo-yos"],
+        ["marble", "marbles"],
+        ["action figure", "action figures"],
+        ["frisbee", "frisbees"],
+        ["football", "footballs"],
+        ["toy dinosaur", "toy dinosaurs"],
+        ["video game", "video games"],
+        ["lego brick", "lego bricks"],
+        ["stuffed animal", "stuffed animals"],
+        ["skateboard", "skateboards"],
+        ["water gun", "water guns"],
+        ["toy soldier", "toy soldiers"],
+        ["hula hoop", "hula hoops"],
+        ["jump rope", "jump ropes"],
+        ["toy sword", "toy swords"],
+        ["figurine", "figurines"]
+    ]
+},
+{
+    "topic": ["fruit", "fruits"],
+    "super": ["paper bag", "paper bags"],
+    "sub": [
+        ["apple", "apples"],
+        ["banana", "bananas"],
+        ["orange", "oranges"],
+        ["grape", "grapes"],
+        ["watermelon", "watermelons"],
+        ["mango", "mangoes"],
+        ["pear", "pears"],
+        ["lemon", "lemons"],
+        ["peach", "peaches"],
+        ["cherry", "cherries"],
+        ["plum", "plums"],
+        ["apricot", "apricots"],
+        ["nectarine", "nectarines"],
+        ["kiwi", "kiwis"],
+        ["pineapple", "pineapples"],
+        ["papaya", "papayas"],
+        ["fig", "figs"],
+        ["grapefruit", "grapefruits"],
+        ["coconut", "coconuts"]
+    ]
+},
+{
+    "topic": ["vegetable", "vegetables"],
+    "super": ["plastic bag", "plastic bags"],
+    "sub": [
+        ["carrot", "carrots"],
+        ["potato", "potatoes"],
+        ["onion", "onions"],
+        ["spinach leaf", "spinach leaves"],
+        ["cucumber", "cucumbers"],
+        ["tomato", "tomatoes"],
+        ["zucchini", "zucchinis"],
+        ["eggplant", "eggplants"],
+        ["lettuce", "lettuces"],
+        ["cabbage", "cabbages"],
+        ["pumpkin", "pumpkins"],
+        ["broccoli", "broccolis"],
+        ["cauliflower", "cauliflowers"],
+        ["beet", "beets"]
+    ]
+},
+{
+    "topic": ["snack", "snacks"],
+    "super": ["box", "boxes"],
+    "sub": [
+        ["cookie", "cookies"],
+        ["nut", "nuts"],
+        ["pretzel", "pretzels"],
+        ["chocolate bar", "chocolate bars"],
+        ["rice cake", "rice cakes"],
+        ["candy bar", "candy bars"],
+        ["biscuit", "biscuits"],
+        ["granola bar", "granola bars"],
+        ["cheese stick", "cheese sticks"],
+        ["protein bar", "protein bars"],
+        ["waffle", "waffles"],
+        ["cupcake", "cupcakes"],
+        ["donut", "donuts"],
+        ["croissant", "croissants"]
+    ]
+},
+{
+    "topic": ["piece of furniture", "pieces of furniture"],
+    "super": ["furniture store", "furniture stores"],
+    "sub": [
+        ["chair", "chairs"],
+        ["table", "tables"],
+        ["sofa", "sofas"],
+        ["beds", "beds"],
+        ["desk", "desks"],
+        ["wardrobe", "wardrobes"],
+        ["cabinet", "cabinets"],
+        ["bookcase", "bookcases"],
+        ["bench", "benches"],
+        ["storage box", "storage boxes"]
+    ]
+},
+{
+    "topic": ["pet", "pets"],
+    "super": ["pet store", "pet stores"],
+    "sub": [
+        ["dog", "dogs"],
+        ["cat", "cats"],
+        ["rabbit", "rabbits"],
+        ["hamster", "hamsters"],
+        ["guinea pig", "guinea pigs"],
+        ["ferret", "ferrets"],
+        ["parrot", "parrots"],
+        ["turtle", "turtles"],
+        ["goldfish", "goldfish"],
+        ["hedgehog", "hedgehogs"]
+    ]
+},
+{
+    "topic": ["school supply", "school supplies"],
+    "super": ["backpack", "backpacks"],
+    "sub": [
+        ["pen", "pens"],
+        ["eraser", "erasers"],
+        ["sharpener", "sharpeners"],
+        ["marker", "markers"],
+        ["crayon", "crayons"],
+        ["scissor", "scissors"],
+        ["glue stick", "glue sticks"],
+        ["ruler", "rulers"],
+        ["stapler", "staplers"],
+        ["paper clip", "paper clips"],
+        ["notebook", "notebooks"],
+        ["calculator", "calculators"],
+        ["water bottle", "water bottles"]
+    ]
+},
+{
+    "topic": ["tool", "tools"],
+    "super": ["toolbox", "toolboxes"],
+    "sub": [
+        ["hammer", "hammers"],
+        ["screwdriver", "screwdrivers"],
+        ["plier", "pliers"],
+        ["wrench", "wrenches"],
+        ["drill", "drills"],
+        ["saw", "saws"],
+        ["chisel", "chisels"],
+        ["stapler", "staplers"],
+        ["bolt cutter", "bolt cutters"],
+        ["paintbrush", "paintbrushes"],
+        ["shovel", "shovels"],
+        ["axe", "axes"]
+    ]
+},
+{
+    "topic": ["music instrument", "music instruments"],
+    "super": ["music store", "music stores"],
+    "sub": [
+        ["guitar", "guitars"],
+        ["piano", "pianos"],
+        ["violin", "violins"],
+        ["drum", "drums"],
+        ["trumpet", "trumpets"],
+        ["saxophone", "saxophones"],
+        ["flute", "flutes"],
+        ["clarinet", "clarinets"],
+        ["trombone", "trombones"],
+        ["cello", "cellos"],
+        ["harp", "harps"],
+        ["accordion", "accordions"],
+        ["banjo", "banjos"]
+    ]
+}
+]

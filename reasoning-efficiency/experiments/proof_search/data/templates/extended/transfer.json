@@ -1,0 +1,36 @@
+{
+    "statements": [
+        {
+            "templates": [
+                "[receiver] then gets [quantity] more {ent} from [sender].",
+                "[receiver] then receives [quantity] more {ent} from [sender].",
+                "[receiver] then gets another [quantity] {ent} from [sender].",
+                "[sender] then gives [quantity] {ent} more to [receiver].",
+                "[receiver] then gets [quantity] more {ent}"
+
+            ],
+            "condition": "[receiver] == [conclusion.agent]"
+        },
+        {
+            "templates": [
+                "[sender] then gives [receiver] [quantity] {ent}.",
+                "[sender] then donates [quantity] {ent} to [receiver].",
+                "[sender] then loses [quantity] {ent}."
+            ],
+            "condition": "[sender] == [conclusion.agent]"
+        }
+    ],
+    "questions": [
+    ],
+    "groundqueries": [
+    ],
+    "conclusions": [
+    ],
+    "partials": {
+        "ent": [
+            "[entity]",
+            "[attribute] [entity]",
+            "[unit]s of [entity]"
+        ]
+    }
+}

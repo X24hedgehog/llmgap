@@ -1,0 +1,93 @@
+[
+  {
+    "whole": ["toy animal", "toy animals"],
+    "parts": [
+      ["toy dog", "toy dogs"],
+      ["toy cat", "toy cats"],
+      ["toy horse", "toy horses"],
+      ["toy elephant", "toy elephants"],
+      ["toy lion", "toy lions"],
+      ["toy rabbit", "toy rabbits"],
+      ["toy cow", "toy cows"],
+      ["toy chicken", "toy chickens"],
+      ["toy duck", "toy ducks"],
+      ["toy pig", "toy pigs"]
+    ]
+  },
+  {
+    "whole": ["fruit", "fruits"],
+    "parts": [
+      ["apple", "apples"],
+      ["banana", "bananas"],
+      ["orange", "oranges"],
+      ["grape", "grapes"],
+      ["watermelon", "watermelons"],
+      ["mango", "mangoes"],
+      ["pear", "pears"],
+      ["lemon", "lemons"],
+      ["peach", "peaches"],
+      ["cherry", "cherries"],
+      ["plum", "plums"],
+      ["apricot", "apricots"],
+      ["nectarine", "nectarines"],
+      ["kiwi", "kiwis"],
+      ["pineapple", "pineapples"],
+      ["papaya", "papayas"],
+      ["fig", "figs"],
+      ["grapefruit", "grapefruits"],
+      ["coconut", "coconuts"]
+    ]
+  },
+  {
+    "whole": ["vegetable", "vegetables"],
+    "parts": [
+      ["carrot", "carrots"],
+      ["potato", "potatoes"],
+      ["onion", "onions"],
+      ["spinach leaf", "spinach leaves"],
+      ["cucumber", "cucumbers"],
+      ["tomato", "tomatoes"],
+      ["zucchini", "zucchinis"],
+      ["eggplant", "eggplants"],
+      ["lettuce", "lettuces"],
+      ["cabbage", "cabbages"],
+      ["pumpkin", "pumpkins"],
+      ["broccoli", "broccolis"],
+      ["cauliflower", "cauliflowers"],
+      ["beet", "beets"],
+      ["sweet potato", "sweet potatoes"]
+    ]
+  },
+  {
+    "whole": ["snack", "snacks"],
+    "parts": [
+      ["cookie", "cookies"],
+      ["nut", "nuts"],
+      ["pretzel", "pretzels"],
+      ["chocolate bar", "chocolate bars"],
+      ["rice cake", "rice cakes"],
+      ["candy bar", "candy bars"],
+      ["biscuit", "biscuits"],
+      ["granola bar", "granola bars"],
+      ["cheese stick", "cheese sticks"],
+      ["protein bar", "protein bars"],
+      ["waffle", "waffles"],
+      ["cupcake", "cupcakes"],
+      ["donut", "donuts"],
+      ["croissant", "croissants"]
+    ]
+  },
+  {
+    "whole": ["toy vehicle", "toy vehicles"],
+    "parts": [
+      ["toy car", "toy cars"],
+      ["toy bicycle", "toy bicycles"],
+      ["toy motorcycle", "toy motorcycles"],
+      ["toy bus", "toy buses"],
+      ["toy truck", "toy trucks"],
+      ["toy boat", "toy boats"],
+      ["toy airplane", "toy airplanes"],
+      ["toy scooter", "toy scooters"]
+    ]
+  }
+]

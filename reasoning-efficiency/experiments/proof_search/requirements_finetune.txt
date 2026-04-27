@@ -1,0 +1,6 @@
+# Additional packages needed for fine-tuning pipeline (beyond llmgap/requirements.txt)
+# Install with: pip install -r requirements_finetune.txt
+peft>=0.10
+trl>=0.9
+bitsandbytes>=0.43
+# openai>=1.0      # optional — only needed for --use-llm-judge in evaluate.py

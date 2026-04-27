@@ -1,0 +1,28 @@
+{
+    "statements": [
+        {
+            "templates": [
+                "[agent] possesses [quantity] {sub_ent} per {super_ent}."
+            ]
+        }
+    ],
+    "questions": [
+    ],
+    "groundqueries": [
+    ],
+    "conclusions": [
+    ],
+    "partials": {
+        "super_ent": [
+            "[super_entity;singular]",
+            "[super_attribute] [super_entity]",
+            "[super_unit]s of [super_entity]"
+        ],
+        "sub_ent": [
+            "[sub_entity]",
+            "[sub_attribute] [sub_entity]",
+            "[sub_unit]s of [sub_entity]"
+        ]
+    },
+    "named_conditions": {}
+}
