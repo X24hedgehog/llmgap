@@ -1,0 +1,8 @@
+tqdm==4.67.1
+wrapt-timeout-decorator==1.5.1 
+
+openai==1.58.1
+vllm==0.7.0
+vllm-nccl-cu12
+
+scipy

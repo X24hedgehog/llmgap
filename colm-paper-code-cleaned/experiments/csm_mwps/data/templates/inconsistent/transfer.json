@@ -1,0 +1,29 @@
+{
+    "statements": [
+        {
+            "templates": [
+                "Then [receiver] gets [quantity] more {ent} from [sender].",
+                "Then [receiver] buys [quantity] more {ent} from [sender]."
+            ],
+            "condition": "[receiver] == [conclusion.agent]"
+        },
+        {
+            "templates": [
+                "Then [sender] gives [receiver] [quantity] {ent}.",
+                "Then [sender] sells [quantity] {ent} to [receiver]."
+            ],
+            "condition": "[sender] == [conclusion.agent]"
+        }
+    ],
+    "questions": [
+    ],
+    "conclusions": [
+    ],
+    "partials": {
+        "ent": [
+            "[entity]",
+            "[attribute] [entity]",
+            "[unit]s of [entity]"
+        ]
+    }
+}

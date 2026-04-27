@@ -1,0 +1,22 @@
+#!/bin/bash
+#SBATCH --job-name=ft_ca_gemma7b
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --gpus=1
+#SBATCH --gres=gpumem:20000m
+#SBATCH --time=20:00:00
+#SBATCH --mem-per-cpu=8192
+#SBATCH --output=jobs/slurm-%j.out
+#SBATCH --error=jobs/slurm-%j.err
+
+set -euo pipefail
+cd /cluster/home/tunguyen1/llmgap/colm-paper-code-cleaned/experiments/csm_mwps
+eval "$($HOME/miniconda3/bin/conda shell.bash hook)"
+conda activate llmgap
+
+python finetune.py \
+    --model-name google/gemma-7b-it \
+    --task correct_answer \
+    --train-csv out/correct_answer_distractor_pairs.csv \
+    --out-dir out/ft_correct_answer/gemma-7b-it \
+    --load-in-4bit
