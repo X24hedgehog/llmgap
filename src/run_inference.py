@@ -26,6 +26,7 @@ import argparse
 import json
 import os
 import re
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -33,6 +34,15 @@ import torch
 from peft import PeftModel
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from openai_judge import DEFAULT_OPENAI_EEDI_JUDGE_MODEL, judge_yes_no_openai
+from prompt import (
+    build_answer_equivalence_prompt,
+)
 
 # ── constants ─────────────────────────────────────────────────────────────────
 
@@ -47,6 +57,8 @@ TASK_MAX_NEW_TOKENS = {
     "next_subquestion": 80,
     "distractor": 512,
 }
+
+EEDI_PROMPT_STYLES = {"eedi_correct_answer", "eedi_distractor"}
 
 LARGE_MODELS = {"7b", "8b"}
 JUDGE_MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct"
@@ -94,6 +106,18 @@ def _needs_4bit(model_name: str) -> bool:
 # ── prompt building ───────────────────────────────────────────────────────────
 
 def _build_prompt(row: pd.Series, task: str) -> str:
+    prompt_style = str(row.get("prompt_style", ""))
+    if prompt_style == "eedi_correct_answer":
+        return f"Question: {str(row['question']).strip()}" + CORRECT_ANSWER_INSTRUCTION
+    if prompt_style == "eedi_distractor":
+        return (
+            "You are solving a math question as a student with the following "
+            f"misconception: {str(row['misconception_name']).strip()}\n\n"
+            f"Question: {str(row['question']).strip()}\n\n"
+            "Think step by step and give the incorrect answer this student "
+            "would produce."
+        )
+
     if task == "correct_answer":
         return str(row["prompt"]).rstrip() + CORRECT_ANSWER_INSTRUCTION
     elif task == "next_subquestion":
@@ -202,7 +226,7 @@ def _judge_yes_no(judge_model, judge_tokenizer, prompts, batch_size=8):
         with torch.no_grad():
             out = judge_model.generate(
                 **enc,
-                max_new_tokens=4,
+                max_new_tokens=1024,
                 do_sample=False,
                 pad_token_id=judge_tokenizer.pad_token_id,
             )
@@ -210,28 +234,109 @@ def _judge_yes_no(judge_model, judge_tokenizer, prompts, batch_size=8):
         for seq in out:
             text = judge_tokenizer.decode(
                 seq[input_len:], skip_special_tokens=True
-            ).strip().lower()
-            scores.append(1 if text.startswith("yes") else 0)
+            ).strip()
+            verdicts = re.findall(r"\b(yes|no)\b", text, flags=re.IGNORECASE)
+            final_verdict = verdicts[-1].lower() if verdicts else "no"
+            scores.append(1 if final_verdict == "yes" else 0)
     return scores
 
 
-def score_correct_answer(predictions, golds, batch_size=8):
-    """Judge: did the student arrive at the correct numeric answer?"""
-    template = (
-        "A student solved the following math problem and wrote this solution:\n"
-        "{prediction}\n\n"
-        "The correct final answer is: {gold}\n\n"
-        "Did the student arrive at the correct final answer? "
-        "Answer only 'yes' or 'no'."
-    )
-    judge_model, judge_tok = _load_judge()
-    prompts = [
-        template.format(prediction=p, gold=g)
-        for p, g in zip(predictions, golds)
-    ]
-    scores = _judge_yes_no(judge_model, judge_tok, prompts, batch_size)
-    del judge_model
-    torch.cuda.empty_cache()
+def _parse_distractor_gold(gold_str: str):
+    import ast
+
+    parsed = ast.literal_eval(gold_str)
+    return parsed if isinstance(parsed, list) else [parsed]
+
+
+def _is_numeric_like(text: str) -> bool:
+    return bool(re.fullmatch(r"[-+]?((\d+\.?\d*)|(\.\d+))", str(text).strip()))
+
+
+def _all_numeric_distractor_golds(golds) -> bool:
+    for gold_str in golds:
+        gold_values = _parse_distractor_gold(gold_str)
+        if not gold_values or not all(_is_numeric_like(value) for value in gold_values):
+            return False
+    return True
+
+
+def _use_semantic_distractor_scoring(prompt_style: str) -> bool:
+    return str(prompt_style) == "eedi_distractor"
+
+
+def _use_semantic_correct_answer_scoring(prompt_style: str) -> bool:
+    return str(prompt_style) == "eedi_correct_answer"
+
+
+def score_correct_answer(predictions, golds, prompts, prompt_styles, batch_size=8):
+    """Score correct answers.
+
+    Numeric golds use the existing judge-based solver check. Non-numeric golds,
+    such as EEDI answer-option text, use normalized exact match unless the row is
+    in the EEDI setting, in which case OpenAI handles semantic equivalence.
+    """
+
+    def normalize_text(text: str) -> str:
+        text = str(text).strip().lower()
+        text = re.sub(r"^(answer:|correct answer:)\s*", "", text)
+        text = text.replace("\\(", "").replace("\\)", "")
+        text = text.replace("\\[", "").replace("\\]", "")
+        text = re.sub(r"\s+", " ", text)
+        return text.strip()
+
+    def is_numeric_like(text: str) -> bool:
+        return bool(re.fullmatch(r"[-+]?((\d+\.?\d*)|(\.\d+))", str(text).strip()))
+
+    scores = [None] * len(predictions)
+    numeric_examples = []
+    semantic_examples = []
+
+    for idx, (prediction, gold, problem_context, prompt_style) in enumerate(
+        zip(predictions, golds, prompts, prompt_styles)
+    ):
+        if _use_semantic_correct_answer_scoring(prompt_style):
+            semantic_examples.append((idx, problem_context, prediction, gold))
+            continue
+
+        if is_numeric_like(gold):
+            numeric_examples.append((idx, prediction, gold))
+            continue
+
+        scores[idx] = 1 if normalize_text(prediction) == normalize_text(gold) else 0
+
+    if numeric_examples:
+        template = (
+            "A student solved the following math problem and wrote this solution:\n"
+            "{prediction}\n\n"
+            "The correct final answer is: {gold}\n\n"
+            "Did the student arrive at the correct final answer? "
+            "Answer only 'yes' or 'no'."
+        )
+        judge_model, judge_tok = _load_judge()
+        judge_prompts = [
+            template.format(prediction=prediction, gold=gold)
+            for _, prediction, gold in numeric_examples
+        ]
+        numeric_scores = _judge_yes_no(judge_model, judge_tok, judge_prompts, batch_size)
+        del judge_model
+        torch.cuda.empty_cache()
+        for (row_idx, _, _), score in zip(numeric_examples, numeric_scores):
+            scores[row_idx] = score
+
+    if semantic_examples:
+        semantic_prompts = [
+            build_answer_equivalence_prompt(
+                problem_context,
+                normalize_text(prediction),
+                normalize_text(gold),
+            )
+            for _, problem_context, prediction, gold in semantic_examples
+        ]
+        print(f"Using OpenAI EEDI judge model: {DEFAULT_OPENAI_EEDI_JUDGE_MODEL}")
+        semantic_scores = judge_yes_no_openai(semantic_prompts, batch_size=batch_size)
+        for (row_idx, _, _, _), score in zip(semantic_examples, semantic_scores):
+            scores[row_idx] = score
+
     return scores
 
 
@@ -255,72 +360,60 @@ def score_next_subquestion(predictions, golds, batch_size=8):
     return scores
 
 
-def score_distractor(predictions, golds, batch_size=8):
-    """Judge: did the student arrive at any of the expected distractor answers?
+def score_distractor(predictions, golds, prompts, prompt_styles, batch_size=8):
+    """Score distractor predictions for both numeric and answer-text outputs."""
 
-    Each gold is a JSON string encoding a list of acceptable distractor answers.
-    Uses a 4-shot prompt (2 false-neg + 2 true-neg) to guide extraction.
-    """
-    template = (
-        "You are a grading assistant. A student was asked to produce a distractor "
-        "(an incorrect answer based on a specific misconception) for a math problem.\n\n"
-        "Your task:\n"
-        "1. Read the student's reasoning and identify the FINAL numeric answer they derived.\n"
-        "2. Check if that number appears in the set of expected distractor answers.\n"
-        "3. Answer 'yes' if it does, 'no' if it does not.\n\n"
-        "Here are some examples:\n\n"
-        "---\n"
-        "Student reasoning:\n"
-        "Liam has 52 pots. Then Liam gives Mia 17 pots. Applying the twist to this "
-        "transfer operation. So Liam has 52 + 17 = 69 pots. Liam has 19 pots fewer "
-        "than Jackson. So Jackson has 69 + 19 = 88 pots.\n"
-        "Expected distractor answers: [88]\n"
-        "The student's final answer is 88, which is in the expected set.\n"
-        "Answer: yes\n\n"
-        "---\n"
-        "Student reasoning:\n"
-        "Ava has 60 irons. Then Ava sells 8 irons to Charlotte. Applying the twist to "
-        "this transfer operation. So Ava has 60 + 8 = 68 irons. Ava has 15 irons more "
-        "than Liam. So Liam has 68 - 15 = 53 irons.\n"
-        "Expected distractor answers: [53]\n"
-        "The student's final answer is 53, which is in the expected set.\n"
-        "Answer: yes\n\n"
-        "---\n"
-        "Student reasoning:\n"
-        "Amelia has 52 toasters. Amelia has 21 toasters fewer than Christian. Applying "
-        "the twist to this comparison operation. So Christian has 52 - 21 = 31 toasters. "
-        "Then Christian gives Jackson 18 toasters. So Christian now has 31 - 18 = 13 "
-        "toasters. Christian has 20 toasters more than Chloe. So Chloe has 13 - 20 = "
-        "-7 toasters.\n"
-        "Expected distractor answers: [75, 33]\n"
-        "The student's final answer is -7, which is NOT in the expected set.\n"
-        "Answer: no\n\n"
-        "---\n"
-        "Student reasoning:\n"
-        "Avery has 57 green couches. Avery has 22 green couches more than Layla. So "
-        "Layla has 57 - 22 = 35 green couches. Layla has 22 green couches fewer than "
-        "Emily. Applying the twist to this comparison operation. So Emily has 35 - 22 = "
-        "13 green couches. Emily has 22 green couches fewer than Mia. So Mia has "
-        "13 - 22 = -9 green couches.\n"
-        "Expected distractor answers: [123, 35, 79]\n"
-        "The student's final answer is -9, which is NOT in the expected set.\n"
-        "Answer: no\n\n"
-        "---\n"
-        "Now grade the following:\n\n"
-        "Student reasoning:\n"
-        "{prediction}\n\n"
-        "Expected distractor answers: {gold}\n\n"
-        "First identify the student's final numeric answer, then check if it is in "
-        "the expected set. Answer only 'yes' or 'no'."
-    )
-    judge_model, judge_tok = _load_judge()
-    prompts = [
-        template.format(prediction=p, gold=g)
-        for p, g in zip(predictions, golds)
-    ]
-    scores = _judge_yes_no(judge_model, judge_tok, prompts, batch_size)
-    del judge_model
-    torch.cuda.empty_cache()
+    def normalize_text(text: str) -> str:
+        text = str(text).strip().lower()
+        text = re.sub(r"^(distractor\s*\d*\s*:|incorrect student answer:|answer:)\s*", "", text)
+        text = text.replace("\\(", "").replace("\\)", "")
+        text = text.replace("\\[", "").replace("\\]", "")
+        text = re.sub(r"\s+", " ", text)
+        return text.strip()
+
+    scores = []
+    semantic_examples = []
+
+    for problem_context, prompt_style, pred, gold_str in zip(
+        prompts, prompt_styles, predictions, golds
+    ):
+        gold_values = _parse_distractor_gold(gold_str)
+        if not _use_semantic_distractor_scoring(prompt_style):
+            gold_nums = {int(float(value)) for value in gold_values}
+            all_nums = re.findall(r'-?\b\d+\b', pred)
+            if all_nums:
+                scores.append(1 if int(all_nums[-1]) in gold_nums else 0)
+            else:
+                scores.append(0)
+            continue
+
+        semantic_examples.append((len(scores), problem_context, pred, gold_values))
+        scores.append(None)
+
+    if not semantic_examples:
+        return scores
+
+    expanded_prompts = []
+    row_slices = []
+    for row_idx, problem_context, pred, gold_values in semantic_examples:
+        start_idx = len(expanded_prompts)
+        pred_norm = normalize_text(pred)
+        for gold in gold_values:
+            expanded_prompts.append(
+                build_answer_equivalence_prompt(
+                    problem_context,
+                    pred_norm,
+                    normalize_text(gold),
+                )
+            )
+        row_slices.append((row_idx, start_idx, len(expanded_prompts)))
+
+    print(f"Using OpenAI EEDI judge model: {DEFAULT_OPENAI_EEDI_JUDGE_MODEL}")
+    expanded_scores = judge_yes_no_openai(expanded_prompts, batch_size=batch_size)
+
+    for row_idx, start, end in row_slices:
+        scores[row_idx] = 1 if any(expanded_scores[start:end]) else 0
+
     return scores
 
 
@@ -459,6 +552,11 @@ def main():
 
     # ── build prompts ─────────────────────────────────────────────────────
     prompts = [_build_prompt(row, args.task) for _, row in test_df.iterrows()]
+    prompt_styles = (
+        test_df["prompt_style"].astype(str).tolist()
+        if "prompt_style" in test_df.columns
+        else [""] * len(test_df)
+    )
     golds = test_df[target_col].astype(str).tolist()
 
     predictions = generate_predictions(
@@ -470,11 +568,23 @@ def main():
 
     # ── score ─────────────────────────────────────────────────────────────
     if args.task == "correct_answer":
-        scores = score_correct_answer(predictions, golds, args.batch_size)
+        scores = score_correct_answer(
+            predictions,
+            golds,
+            prompts,
+            prompt_styles,
+            args.batch_size,
+        )
     elif args.task == "next_subquestion":
         scores = score_next_subquestion(predictions, golds, args.batch_size)
     elif args.task == "distractor":
-        scores = score_distractor(predictions, golds, args.batch_size)
+        scores = score_distractor(
+            predictions,
+            golds,
+            prompts,
+            prompt_styles,
+            args.batch_size,
+        )
 
     # ── save results ──────────────────────────────────────────────────────
     os.makedirs(args.out_dir, exist_ok=True)

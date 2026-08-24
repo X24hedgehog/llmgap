@@ -25,6 +25,7 @@ import json
 import os
 import random
 import re
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -38,6 +39,15 @@ from transformers import (
     BitsAndBytesConfig,
 )
 from trl import SFTTrainer
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from openai_judge import DEFAULT_OPENAI_EEDI_JUDGE_MODEL, judge_yes_no_openai
+from prompt import (
+    build_answer_equivalence_prompt,
+)
 
 try:
     from trl import SFTConfig as _SFTConfigCls
@@ -93,6 +103,8 @@ TASK_MAX_NEW_TOKENS = {
     "distractor": 512,
 }
 
+EEDI_PROMPT_STYLES = {"eedi_correct_answer", "eedi_distractor"}
+
 
 def _needs_4bit(model_name: str) -> bool:
     return any(tag in model_name.lower() for tag in LARGE_MODELS)
@@ -101,16 +113,22 @@ def _needs_4bit(model_name: str) -> bool:
 # ── prompt & response formatting ──────────────────────────────────────────────
 
 def _format_chat(tokenizer, prompt: str, response: str) -> str:
-    messages = [
-        {"role": "user", "content": prompt},
-        {"role": "assistant", "content": str(response)},
-    ]
-    return tokenizer.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=False
-    )
+    return f"{prompt.rstrip()}\n\n{str(response).strip()}"
 
 
 def _build_prompt(row: pd.Series, task: str) -> str:
+    prompt_style = str(row.get("prompt_style", ""))
+    if prompt_style == "eedi_correct_answer":
+        return f"Question: {str(row['question']).strip()}" + CORRECT_ANSWER_INSTRUCTION
+    if prompt_style == "eedi_distractor":
+        return (
+            "You are solving a math question as a student with the following "
+            f"misconception: {str(row['misconception_name']).strip()}\n\n"
+            f"Question: {str(row['question']).strip()}\n\n"
+            "Think step by step and give the incorrect answer this student "
+            "would produce."
+        )
+
     if task == "correct_answer":
         return str(row["prompt"]).rstrip() + CORRECT_ANSWER_INSTRUCTION
     elif task == "next_subquestion":
@@ -150,16 +168,17 @@ def build_hf_dataset(df: pd.DataFrame, tokenizer, task: str) -> Dataset:
 
 def build_val_data(df: pd.DataFrame, task: str):
     """Build validation prompts and gold answers for judge-based scoring."""
-    prompts, golds = [], []
+    prompts, golds, prompt_styles = [], [], []
     for _, row in df.iterrows():
         prompts.append(_build_prompt(row, task))
+        prompt_styles.append(str(row.get("prompt_style", "")))
         if task == "correct_answer":
             golds.append(str(row["target_answer"]))
         elif task == "next_subquestion":
             golds.append(str(row["next_subquestion"]))
         elif task == "distractor":
             golds.append(row["target_distractor_answers"])  # JSON string
-    return prompts, golds
+    return prompts, golds, prompt_styles
 
 
 # ── post-training checkpoint evaluation (judge-based) ─────────────────────────
@@ -240,7 +259,7 @@ def _judge_yes_no(judge_model, judge_tok, prompts, batch_size=8):
         with torch.no_grad():
             out = judge_model.generate(
                 **enc,
-                max_new_tokens=4,
+                max_new_tokens=1024,
                 do_sample=False,
                 pad_token_id=judge_tok.pad_token_id,
             )
@@ -248,25 +267,196 @@ def _judge_yes_no(judge_model, judge_tok, prompts, batch_size=8):
         for seq in out:
             text = judge_tok.decode(
                 seq[input_len:], skip_special_tokens=True
-            ).strip().lower()
-            scores.append(1 if text.startswith("yes") else 0)
+            ).strip()
+            verdicts = re.findall(r"\b(yes|no)\b", text, flags=re.IGNORECASE)
+            final_verdict = verdicts[-1].lower() if verdicts else "no"
+            scores.append(1 if final_verdict == "yes" else 0)
     return scores
 
 
-def _score_distractor_regex(predictions, golds):
-    """Score distractor predictions using regex: check if last number in
-    prediction matches any gold distractor answer. Returns list of 0/1."""
+def _parse_distractor_gold(gold_str: str):
     import ast
+
+    parsed = ast.literal_eval(gold_str)
+    return parsed if isinstance(parsed, list) else [parsed]
+
+
+def _use_semantic_distractor_scoring(prompt_style: str) -> bool:
+    return str(prompt_style) == "eedi_distractor"
+
+
+def _use_semantic_correct_answer_scoring(prompt_style: str) -> bool:
+    return str(prompt_style) == "eedi_correct_answer"
+
+
+def _score_distractor_regex(predictions, golds, prompts=None, prompt_styles=None):
+    """Score distractor predictions.
+
+    Numeric distractors are matched by final-number extraction, as in the
+    synthetic MathGAP setting. EEDI distractors are matched by semantic
+    equivalence using the judge model.
+    """
+    def normalize_text(text: str) -> str:
+        text = str(text).strip().lower()
+        text = re.sub(r"^(distractor\s*\d*\s*:|incorrect student answer:|answer:)\s*", "", text)
+        text = text.replace("\\(", "").replace("\\)", "")
+        text = text.replace("\\[", "").replace("\\]", "")
+        text = re.sub(r"\s+", " ", text)
+        return text.strip()
+
+    def is_numeric_like(text: str) -> bool:
+        text = normalize_text(text)
+        return bool(re.fullmatch(r"[-+]?((\d+\.?\d*)|(\.\d+))", text))
+
     scores = []
-    for pred, gold_str in zip(predictions, golds):
-        gold_nums = set(ast.literal_eval(gold_str))
-        all_nums = re.findall(r'-?\b\d+\b', pred)
-        if all_nums:
-            last_num = int(all_nums[-1])
-            scores.append(1 if last_num in gold_nums else 0)
-        else:
-            scores.append(0)
+    semantic_examples = []
+    if prompt_styles is None:
+        prompt_styles = [""] * len(predictions)
+
+    for idx, (pred, gold_str, prompt_style) in enumerate(zip(predictions, golds, prompt_styles)):
+        gold_values = _parse_distractor_gold(gold_str)
+
+        if not _use_semantic_distractor_scoring(prompt_style):
+            gold_nums = {int(float(value)) for value in gold_values}
+            all_nums = re.findall(r'-?\b\d+\b', pred)
+            if all_nums:
+                last_num = int(all_nums[-1])
+                scores.append(1 if last_num in gold_nums else 0)
+            else:
+                scores.append(0)
+            continue
+
+        semantic_examples.append((idx, pred, gold_values))
+        scores.append(None)
+
+    if not semantic_examples:
+        return scores
+
+    if prompts is None:
+        raise ValueError("prompts are required for semantic distractor scoring")
+
+    expanded_prompts = []
+    row_slices = []
+    for row_idx, pred, gold_values in semantic_examples:
+        problem_context = prompts[row_idx]
+        start_idx = len(expanded_prompts)
+        pred_norm = normalize_text(pred)
+        for gold in gold_values:
+            expanded_prompts.append(
+                build_answer_equivalence_prompt(
+                    problem_context,
+                    pred_norm,
+                    normalize_text(gold),
+                )
+            )
+        row_slices.append((row_idx, start_idx, len(expanded_prompts)))
+
+    print(f"Using OpenAI EEDI judge model: {DEFAULT_OPENAI_EEDI_JUDGE_MODEL}")
+    expanded_scores = judge_yes_no_openai(expanded_prompts)
+
+    for row_idx, start, end in row_slices:
+        scores[row_idx] = 1 if any(expanded_scores[start:end]) else 0
+
     return scores
+
+
+def _score_correct_answer(predictions, golds, prompts, prompt_styles, batch_size=8):
+    def normalize_text(text: str) -> str:
+        text = str(text).strip().lower()
+        text = re.sub(r"^(answer:|correct answer:)\s*", "", text)
+        text = text.replace("\\(", "").replace("\\)", "")
+        text = text.replace("\\[", "").replace("\\]", "")
+        text = re.sub(r"\s+", " ", text)
+        return text.strip()
+
+    def is_numeric_like(text: str) -> bool:
+        return bool(re.fullmatch(r"[-+]?((\d+\.?\d*)|(\.\d+))", str(text).strip()))
+
+    scores = [None] * len(predictions)
+    numeric_examples = []
+    semantic_examples = []
+
+    for idx, (prediction, gold, problem_context, prompt_style) in enumerate(
+        zip(predictions, golds, prompts, prompt_styles)
+    ):
+        if _use_semantic_correct_answer_scoring(prompt_style):
+            semantic_examples.append((idx, problem_context, prediction, gold))
+            continue
+
+        if is_numeric_like(gold):
+            numeric_examples.append((idx, prediction, gold))
+            continue
+
+        scores[idx] = 1 if normalize_text(prediction) == normalize_text(gold) else 0
+
+    if numeric_examples:
+        judge_model, judge_tok = _load_judge()
+        numeric_prompts = [
+            (
+                "A student solved the following math problem and wrote this solution:\n"
+                f"{prediction}\n\n"
+                f"The correct final answer is: {gold}\n\n"
+                "Did the student arrive at the correct final answer? "
+                "Answer only 'yes' or 'no'."
+            )
+            for _, prediction, gold in numeric_examples
+        ]
+        numeric_scores = _judge_yes_no(judge_model, judge_tok, numeric_prompts, batch_size)
+        del judge_model
+        torch.cuda.empty_cache()
+        for (row_idx, _, _), score in zip(numeric_examples, numeric_scores):
+            scores[row_idx] = score
+
+    if semantic_examples:
+        semantic_prompts = [
+            build_answer_equivalence_prompt(
+                problem_context,
+                normalize_text(prediction),
+                normalize_text(gold),
+            )
+            for _, problem_context, prediction, gold in semantic_examples
+        ]
+        print(f"Using OpenAI EEDI judge model: {DEFAULT_OPENAI_EEDI_JUDGE_MODEL}")
+        semantic_scores = judge_yes_no_openai(semantic_prompts, batch_size=batch_size)
+        for (row_idx, _, _, _), score in zip(semantic_examples, semantic_scores):
+            scores[row_idx] = score
+
+    return scores
+
+
+def _score_correct_answer_exact(predictions, golds):
+    """Score non-numeric correct answers by normalized exact match."""
+
+    def normalize_text(text: str) -> str:
+        text = str(text).strip().lower()
+        text = re.sub(r"^(answer:|correct answer:)\s*", "", text)
+        text = text.replace("\\(", "").replace("\\)", "")
+        text = text.replace("\\[", "").replace("\\]", "")
+        text = re.sub(r"\s+", " ", text)
+        return text.strip()
+
+    return [
+        1 if normalize_text(pred) == normalize_text(gold) else 0
+        for pred, gold in zip(predictions, golds)
+    ]
+
+
+def _all_numeric_golds(golds) -> bool:
+    def is_numeric_like(text: str) -> bool:
+        return bool(re.fullmatch(r"[-+]?((\d+\.?\d*)|(\.\d+))", str(text).strip()))
+
+    return all(is_numeric_like(gold) for gold in golds)
+
+
+def _all_numeric_distractor_golds(golds) -> bool:
+    def is_numeric_like(text: str) -> bool:
+        return bool(re.fullmatch(r"[-+]?((\d+\.?\d*)|(\.\d+))", str(text).strip()))
+
+    for gold_str in golds:
+        gold_values = _parse_distractor_gold(gold_str)
+        if not gold_values or not all(is_numeric_like(gold) for gold in gold_values):
+            return False
+    return True
 
 
 def _score_with_judge(judge_model, judge_tok, task, predictions, golds, batch_size=8):
@@ -309,7 +499,7 @@ def _score_with_judge(judge_model, judge_tok, task, predictions, golds, batch_si
 
 
 def evaluate_checkpoints(
-    args, val_prompts, val_golds, quant_config, load_4bit,
+    args, val_prompts, val_golds, val_prompt_styles, quant_config, load_4bit,
 ):
     """Evaluate all epoch checkpoints on the val set using the judge model.
 
@@ -355,9 +545,8 @@ def evaluate_checkpoints(
         torch.cuda.empty_cache()
 
     # Phase 2: score all checkpoints
-    # For distractor task, use regex scoring (no judge needed)
-    # For other tasks, load judge model
-    if args.task == "distractor":
+    # Distractor and EEDI correct-answer scoring handle their own routing.
+    if args.task in {"distractor", "correct_answer"}:
         judge_model, judge_tok = None, None
     else:
         judge_model, judge_tok = _load_judge()
@@ -367,7 +556,19 @@ def evaluate_checkpoints(
         ckpt_name = Path(ckpt_path).name
         print(f"\nScoring {ckpt_name}...")
         if args.task == "distractor":
-            scores = _score_distractor_regex(preds, val_golds)
+            scores = _score_distractor_regex(
+                preds,
+                val_golds,
+                val_prompts,
+                val_prompt_styles,
+            )
+        elif args.task == "correct_answer":
+            scores = _score_correct_answer(
+                preds,
+                val_golds,
+                val_prompts,
+                val_prompt_styles,
+            )
         else:
             scores = _score_with_judge(
                 judge_model, judge_tok, args.task, preds, val_golds
@@ -465,7 +666,7 @@ def train(args) -> None:
 
     # ── datasets ──────────────────────────────────────────────────────────
     train_dataset = build_hf_dataset(train_df, tokenizer, task=args.task)
-    val_prompts, val_golds = build_val_data(val_df, task=args.task)
+    val_prompts, val_golds, val_prompt_styles = build_val_data(val_df, task=args.task)
 
     # ── training config ───────────────────────────────────────────────────
     training_kwargs = dict(
@@ -538,7 +739,14 @@ def train(args) -> None:
 
     # Evaluate all checkpoints on val set with the judge model
     if not args.skip_eval:
-        evaluate_checkpoints(args, val_prompts, val_golds, quant_config, load_4bit)
+        evaluate_checkpoints(
+            args,
+            val_prompts,
+            val_golds,
+            val_prompt_styles,
+            quant_config,
+            load_4bit,
+        )
     else:
         print("Skipping post-training evaluation (--skip-eval).")
 

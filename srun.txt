@@ -1,1 +1,6 @@
-srun -n 1 --cpus-per-task=1 --gpus=1 --gres=gpumem:20000m --time=5:00:00 --mem-per-cpu=8192 --pty bash -i
+mkdir -p /cluster/scratch/tunguyen1/hf_cache/hub /cluster/scratch/tunguyen1/hf_cache/transformers
+HF_HOME=/cluster/scratch/tunguyen1/hf_cache \
+HUGGINGFACE_HUB_CACHE=/cluster/scratch/tunguyen1/hf_cache/hub \
+TRANSFORMERS_CACHE=/cluster/scratch/tunguyen1/hf_cache/transformers \
+HF_HUB_DISABLE_XET=1 \
+srun -n 1 --cpus-per-task=1 --gpus=1 --gres=gpumem:40000m --time=5:00:00 --mem-per-cpu=8192 --pty bash -i

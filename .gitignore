@@ -14,9 +14,6 @@ slurm-*.out
 slurm-*.err
 
 # Large external repos (use git submodules instead)
-colm-paper-code-cleaned/
-reasoning-efficiency/
-reasoning-efficiency-v1/
 
 # IDE
 .vscode/
@@ -27,3 +24,5 @@ reasoning-efficiency-v1/
 # OS
 .DS_Store
 .env
+eedi/.openai_api_key
+eedi/openai_api.txt
